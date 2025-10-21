@@ -1,0 +1,61 @@
+name: Semgrep CE
+
+on:
+  pull_request_target:
+    branches: [ main ]
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+
+    container:
+      image: semgrep/semgrep:latest
+
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history to properly detect changes
+          ref: ${{ github.event.pull_request.head.sha }}  # Explicitly checkout the PR code
+
+
+      - name: Get changed files
+        shell: bash
+        run: |
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          echo "Base SHA: ${{ github.event.pull_request.base.sha }}"
+          echo "Head SHA: ${{ github.event.pull_request.head.sha }}"
+          echo "Current SHA: ${{ github.sha }}"
+          git config --global --add safe.directory "$(pwd)"
+          git fetch origin ${{ github.base_ref }}
+          echo "CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }} | tr '\n' ' ')" >> $GITHUB_ENV
+          echo "Changed files: $CHANGED_FILES"
+      
+      - name: Get changed files
+        id: changed-files
+        run: |
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          
+          echo "Changed files between $BASE_SHA and $HEAD_SHA:"
+          echo "CHANGED_FILES=$(git diff --name-only $BASE_SHA $HEAD_SHA | tr '\n' ' ')" >> $GITHUB_ENV
+          echo "changed files: $CHANGED_FILES"
+
+
+      
+      - name: Run Semgrep on changed files
+        shell: bash
+        run: |
+          if [ -n "$CHANGED_FILES" ]; then
+            semgrep scan --config auto --json --output semgrep.json $CHANGED_FILES
+            semgrep scan --config auto --sarif --output semgrep.sarif $CHANGED_FILES
+          else
+            echo "No files changed in this PR"
+            echo "[]" > semgrep.json
+            echo '{"runs": []}' > semgrep.sarif
+          fi
+      
+      - name: Upload SARIF to github
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
