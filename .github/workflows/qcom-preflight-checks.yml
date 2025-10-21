@@ -15,10 +15,11 @@ on:
 permissions:
  contents: read
  security-events: write
+ pull-requests: write
 
 jobs:
   qcom-preflight-checks:
-    uses: qualcomm/qcom-reusable-workflows/.github/workflows/qcom-preflight-checks-reusable-workflow.yml@v1.1.4
+    uses: qualcomm/qcom-reusable-workflows/.github/workflows/qcom-preflight-checks-reusable-workflow.yml@njetha
     with:
         # ✅ Preflight Checkers
         repolinter: true                   # default: true
