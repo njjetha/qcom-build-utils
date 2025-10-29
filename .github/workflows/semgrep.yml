@@ -18,7 +18,7 @@ jobs:
         shell: bash
         run: |
           semgrep scan --config auto --json > semgrep.json
-          semgrep scan --config auto --no-send --sarif > semgrep.sarif
+          semgrep scan --config auto --sarif > semgrep.sarif
 
       # - name: setup reviewdog
       #   shell: bash
