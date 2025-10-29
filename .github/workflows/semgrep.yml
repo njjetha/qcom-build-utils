@@ -1,0 +1,35 @@
+name: Semgrep CE
+
+on:
+  pull_request:
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+
+    container:
+      image: semgrep/semgrep:latest
+
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Semgrep
+        run: |
+          semgrep scan --config auto --json > semgrep.json
+          semgrep scan --config auto --sarif > semgrep.sarif
+
+      - name: setup reviewdog
+        uses: reviewdog/action-setup@v1
+      
+      - name: comment on PR findings
+        run: |
+          cat semgrep.json | reviewdog -f=semgrep -reporter=github-pr-review -fail-on-error=false
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload SARIF to github
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep-scan
