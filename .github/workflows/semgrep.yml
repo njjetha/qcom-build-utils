@@ -18,22 +18,23 @@ jobs:
         shell: bash
         run: |
           semgrep scan --config auto --json > semgrep.json
-          semgrep scan --config auto --sarif > semgrep.sarif
+          semgrep scan --config auto --no-send --sarif > semgrep.sarif
 
-      - name: setup reviewdog
-        shell: bash
-        run: |
-          curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin/ v0.14.1
+      # - name: setup reviewdog
+      #   shell: bash
+      #   run: |
+      #     curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin/ v0.14.1
+      #     apt-get update && apt-get install -y jq
 
       
-      - name: comment on PR findings
-        run: |
-          cat semgrep.json | reviewdog -f=semgrep -reporter=github-pr-review -fail-on-error=false
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: comment on PR findings
+      #   run: |
+      #     cat semgrep.json | reviewdog -f=semgrep -reporter=github-pr-review -fail-on-error=false
+      #   env:
+      #     REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Upload SARIF to github
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
-          category: semgrep-scan
+          # category: semgrep-scan
