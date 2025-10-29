@@ -15,12 +15,16 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Run Semgrep
+        shell: bash
         run: |
           semgrep scan --config auto --json > semgrep.json
           semgrep scan --config auto --sarif > semgrep.sarif
 
       - name: setup reviewdog
-        uses: reviewdog/action-setup@v1
+        shell: bash
+        run: |
+          curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin/ v0.14.1
+
       
       - name: comment on PR findings
         run: |
