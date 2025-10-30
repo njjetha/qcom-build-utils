@@ -41,30 +41,25 @@ env:
   NORMALIZED_VERSION: ""
   DISTRIBUTION: noble
 
-  #TODOOOOOOO : Check if a PR branch already exist. This wwould mean that someone or something triggered the
+  #TODO : Check if a PR branch already exist. This would mean that someone or something triggered the
   # promotion more than once before it was merged
 
 jobs:
   promote-upstream-version:
 
-    runs-on: [self-hosted, Linux, ARM64]
-#   runs-on: [self-hosted, lecore-stg-u2404-arm64-xlrg-od-ephem]
+    runs-on: ubuntu-latest
 
-#   container:
-#     image: ubuntu:noble
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/qualcomm-linux/pkg-builder:amd64-latest
+      credentials:
+        username: ${{ vars.DEB_PKG_BOT_CI_USERNAME }}
+        password: ${{ secrets.TOKEN }}
 
     steps:
-
-#     - name: Install dependencies
-#       run: |
-#         apt-get update
-#         apt-get install -y git git-buildpackage
-
-      - name: Check Dependencies
-        run: |
-          git --version
-          gbp --version
-          gh --version
 
       - name: Ensure Workspace Is Clean
         run: rm -rf *
@@ -100,7 +95,7 @@ jobs:
           path: ./package-repo
           fetch-depth: 0
 
-      - name: Fetch All Branches and Tags
+      - name: Show branches/tags and checkout debian/upstream latest
         run: |
           cd ./package-repo
 
@@ -139,17 +134,8 @@ jobs:
       - name: Add Upstream Link As A Remote And Fetch Tags
         run: |
           cd ./package-repo
-          git remote add upstream-source git@github.com:${{inputs.upstream-repo}}.git
+          git remote add upstream-source https://x-access-token:${{secrets.TOKEN}}@github.com/${{inputs.upstream-repo}}.git
           git fetch upstream-source "+refs/tags/*:refs/tags/*"
-
-      - name: Clone Upstream Repo At Specified Tag
-        uses: actions/checkout@v4
-        with:
-          repository: ${{inputs.upstream-repo}}
-          ref: ${{inputs.upstream-tag}}
-          token: ${{secrets.TOKEN}}
-          path: ./upstream-repo
-          fetch-depth: 1
 
       - name: Pre-populate the upstream/latest branch if first promotion
         run: |
@@ -159,60 +145,32 @@ jobs:
           # the history of upstream directly, instead of creating an --allow-empty commit
           # which will be dragged along.
           if ! git ls-remote --exit-code --heads origin upstream/latest; then
-            git checkout --orphan upstream/latest
-
-            git rm -r --cached .github *
-
-            rm -r .github *
-
-            git reset --hard ${{inputs.upstream-tag}}
-
-            git checkout debian/latest
+            git branch upstream/latest ${{inputs.upstream-tag}}
+          else
+            # The branch exists, check it out and promote it to the upstream tag
+            git checkout upstream/latest
+            git merge --ff-only ${{inputs.upstream-tag}}
           fi
 
-      - name: GBP Import Orig
+      - name: Merge upstream tag into packaging branch
         run: |
           cd ./package-repo
 
-          git config user.name "Github Service Bot"
-          git config user.email "githubservice@qti.qualcomm.com"
+          git config user.name "${{vars.DEB_PKG_BOT_CI_NAME}}"
+          git config user.email "${{vars.DEB_PKG_BOT_CI_EMAIL}}"
+
+          git checkout debian/latest
 
           git checkout -b debian/pr/${{env.NORMALIZED_VERSION}}-1
 
-          # Run gbp with --no-merge, this is because we do not want gbp to perform the final merging of upstream/latest into debian/latest
-          # This because in upstream/latest, the top commit is the one of the filtering of git, github and debian folder. gbp will complain
-          # the merge is unseccessful because we want to merge with debian/latest, which has a workflow in .github, resulting in a merge conflict
-          # where in one branch we deleted .github folder, and the other we add files. We will therefore take the matter in our own hands manually after.
+          ../qcom-build-utils/scripts/merge_debian_packaging_upstream ${{inputs.upstream-tag}}
 
-          gbp import-orig \
-            --verbose \
-            --upstream-branch=upstream/latest \
-            --debian-branch=debian/pr/${{env.NORMALIZED_VERSION}}-1 \
-            --no-pristine-tar \
-            --upstream-vcs-tag=${{inputs.upstream-tag}} \
-            --upstream-version=${{env.NORMALIZED_VERSION}} \
-            --upstream-tag="upstream/%(version)s" \
-            --import-msg=$'Merge commit after import of upstream %(version)s.\n\nFiltered out upstream .git/, .github/ and debian/ folders\n\nSigned-off-by: Github Service Bot <githubservice@qti.qualcomm.com>' \
-            --filter=.git \
-            --filter=.github \
-            --filter=debian \
-            --no-merge \
-            ../upstream-repo
-
-            git merge \
-              --allow-unrelated-histories \
-              --signoff \
-              -m "Merge upstream/1.0.0 into debian/latest" \
-              -m "Filtered out .git, .github and debian from upstram, and preserved .github debian/latest" \
-              upstream/latest
-
-      #TODO : Think about how to promote the distro -1 version, and if we push the tag or not
       - name: Promote Changelog
         run: |
           cd ./package-repo
 
-          export DEBFULLNAME="Github Service Bot"
-          export DEBEMAIL=githubservice@qti.qualcomm.com
+          export DEBFULLNAME="${{vars.DEB_PKG_BOT_CI_NAME}}"
+          export DEBEMAIL="${{vars.DEB_PKG_BOT_CI_EMAIL}}"
 
           # use ignore branch because we are not on default debian branch
           gbp dch \
@@ -228,6 +186,9 @@ jobs:
 
           # Push upstream/latest branch promoted to the tag
           git push origin upstream/latest
+
+          git tag upstream/${{env.NORMALIZED_VERSION}} upstream/latest
+
           # Push that new tag
           git push origin upstream/${{env.NORMALIZED_VERSION}}
 

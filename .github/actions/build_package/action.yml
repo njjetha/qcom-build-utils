@@ -3,12 +3,18 @@ description: |
   This Github Actions builds the package
 
 inputs:
+  distro-codename:
+    description: The distribution codename to build for. Ex noble, questing, etc
+    required: true
+
   pkg-dir:
     description: The directory where the debian package source is
     required: true
+
   build-dir:
     description: The directory where the package is built
     required: true
+
   run-lintian:
     description: Run lintian or not during the build
     default: false
@@ -18,13 +24,20 @@ runs:
   
   steps:
 
-    - name: Validate Or Create Chroot Environment
+    # Normalize the name of the architecture
+    # Build Architecture: The architecture of the machine performing the build (arm64 when native or amd64 when cross compiling).
+    # This depends on the runner executing the build
+    - name: Set Builder Arch variable
       shell: bash
       run: |
-        ./qcom-build-utils/scripts/prep_chroot_env.py \
-          --arch        ${{env.ARCH}} \
-          --os-codename ${{env.UBUNTU_CODENAME}} \
-          --suffix      ${{env.DISTRO}}
+        if [ "${{ runner.arch }}" = "X64" ]; then
+          echo "BUILD_ARCH=amd64" >> $GITHUB_ENV
+        elif [ "${{ runner.arch }}" = "ARM64" ]; then
+          echo "BUILD_ARCH=arm64" >> $GITHUB_ENV
+        else
+          echo "Unsupported architecture: ${{ runner.arch }}"
+          exit 1
+        fi
 
     - name: Prepare Workspace Structure For The Build
       shell: bash
@@ -53,8 +66,8 @@ runs:
           lintian_flag="--no-run-lintian"
         fi
 
-        if curl -sfI "http://pkg.qualcomm.com/dists/${{env.UBUNTU_CODENAME}}/Release" > /dev/null; then
-          EXTRA_REPO="--extra-repository='deb [arch=${{env.ARCH}} trusted=yes] http://pkg.qualcomm.com ${{env.UBUNTU_CODENAME}}/stable main'"
+        if curl -sfI "http://pkg.qualcomm.com/dists/${{inputs.distro-codename}}/Release" > /dev/null; then
+          EXTRA_REPO="--extra-repository='deb [arch=arm64 trusted=yes] http://pkg.qualcomm.com ${{inputs.distro-codename}}/stable main'"
         else
           EXTRA_REPO=""
         fi
@@ -62,10 +75,14 @@ runs:
         set +e
 
         # ℹ️ --git-ignore-branch is necessary because the debian branch actually checked out can be any (ex, debian/1.0.0) because we can build any previous tag 
+        # ℹ️ chroot mode unshare is important to bypass privilege issues with the mounting
+        # Host Architecture: The architecture for which the binaries are being built (invariably arm64).
+
         gbp buildpackage \
           --git-ignore-branch \
-          --git-builder="sbuild --arch=${{env.ARCH}} \
-                                --dist=${{env.UBUNTU_CODENAME}}-${{env.ARCH}}-${{env.DISTRO}} \
+          --git-builder="sbuild --host=arm64 \
+                                --build=${{env.BUILD_ARCH}} \
+                                --dist=${{inputs.distro-codename}} \
                                 $lintian_flag \
                                 --build-dir ../${{inputs.build-dir}} \
                                 --build-dep-resolver=apt \

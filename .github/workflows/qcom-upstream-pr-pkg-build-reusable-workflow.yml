@@ -34,6 +34,16 @@ on:
         type: boolean
         default: false
 
+      distro-codename:
+        description: The distribution codename to build for. Ex noble, jammy, etc
+        type: string
+        default: noble
+
+      runner:
+        description: The runner to use for the build
+        type: string
+        default: ubuntu-latest
+
     secrets:
       TOKEN:
         required: true
@@ -46,32 +56,26 @@ env:
   # For ABI checker
   REPO_URL: https://qualcomm-linux.github.io/pkg-oss-staging-repo/
 
-  UBUNTU_CODENAME: noble #TODO change this to a param
-  DISTRO: ubuntu
-  ARCH: arm64
-
   upstream_version: ""
   distro_revision: ""
 
 jobs:
   pkg-build-pr-check:
 
-    runs-on: [self-hosted, Linux, ARM64]
-#   runs-on: [self-hosted, lecore-stg-u2404-arm64-xlrg-od-ephem]
+    runs-on: ${{inputs.runner}}
 
-#   container:
-#     image: ubuntu:noble
-#     options: --volume /srv/chroot:/srv/chroot
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/qualcomm-linux/pkg-builder:${{inputs.runner == 'ubuntu-latest' && 'amd64' || 'arm64'}}-latest
+      options: --privileged
+      credentials:
+        username: ${{vars.DEB_PKG_BOT_CI_USERNAME}}
+        password: ${{secrets.TOKEN}}
 
     steps:
-
-#     - name: Install dependencies
-#       run: |
-#         apt-get update
-#         apt-get install -y git git-buildpackage sbuild debootstrap tree
-
-      - name: Ensure Workspace Is Clean
-        run: rm -rf *
 
       - name: Print caller info
         run: |
@@ -126,15 +130,15 @@ jobs:
         run: |
           cd ./package-repo
 
-          git config user.name "Github Service Bot"
-          git config user.email "githubservice@qti.qualcomm.com"
+          git config user.name "${{vars.DEB_PKG_BOT_CI_NAME}}"
+          git config user.email "${{vars.DEB_PKG_BOT_CI_EMAIL}}"
 
           git checkout upstream/latest
           git checkout debian/latest
           git checkout -b debian/upstream-pr
 
           version=$(dpkg-parsechangelog --show-field Version)
-          
+
           # Split into upstream and distro revision
           upstream_version="${version%%-*}"      # Everything before the first dash
           distro_revision="${version#*-}"        # Everything after the first dash
@@ -164,7 +168,7 @@ jobs:
             --filter=debian \
             --no-merge \
             ../upstream-repo
-            
+
           git merge \
             --allow-unrelated-histories \
             --signoff \
@@ -176,14 +180,14 @@ jobs:
         run: |
           cd ./package-repo
 
-          export DEBFULLNAME="Github Service Bot"
-          export DEBEMAIL=githubservice@qti.qualcomm.com
+          export DEBFULLNAME="${{vars.DEB_PKG_BOT_CI_NAME}}"
+          export DEBEMAIL="${{vars.DEB_PKG_BOT_CI_EMAIL}}"
 
           # use ignore branch because we are not on default debian branch
           # use -b to ignore new version is less than current version. This happens because of the ~pr#
           gbp dch \
             --ignore-branch \
-            --distribution=${{env.UBUNTU_CODENAME}} \
+            --distribution=${{inputs.distro-codename}} \
             --new-version=${{env.upstream_version}}~pr${{inputs.pr-number}}-${{env.distro_revision}} \
             --dch-opt="-b"
 
@@ -192,6 +196,7 @@ jobs:
       - name: Build Debian Packages
         uses: ./qcom-build-utils/.github/actions/build_package
         with:
+          distro-codename: ${{inputs.distro-codename}}
           pkg-dir: package-repo
           build-dir: build-area
           run-lintian: ${{inputs.run-lintian}}
@@ -199,3 +204,5 @@ jobs:
       - name: Run ABI Check
         if: true
         uses: ./qcom-build-utils/.github/actions/abi_checker
+        with:
+          distro-codename: ${{inputs.distro-codename}}
