@@ -1,7 +1,7 @@
 name: Semgrep CE
 
 on:
-  pull_request_target:
+  pull_request:
 
 jobs:
   semgrep:
@@ -13,28 +13,28 @@ jobs:
     steps:
       - name: checkout code
         uses: actions/checkout@v4
-      
-      - name: Run Semgrep
+        with:
+          fetch-depth: 0  # This is important to get all history for diff
+
+      - name: Get changed files
         shell: bash
         run: |
-          semgrep scan --config auto --json > semgrep.json
-          semgrep scan --config auto --sarif > semgrep.sarif
-
-      # - name: setup reviewdog
-      #   shell: bash
-      #   run: |
-      #     curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin/ v0.14.1
-      #     apt-get update && apt-get install -y jq
-
+          git fetch origin ${{ github.base_ref }}
+          echo "CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }} | tr '\n' ' ')" >> $GITHUB_ENV
       
-      # - name: comment on PR findings
-      #   run: |
-      #     cat semgrep.json | reviewdog -f=semgrep -reporter=github-pr-review -fail-on-error=false
-      #   env:
-      #     REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run Semgrep on changed files
+        shell: bash
+        run: |
+          if [ -n "$CHANGED_FILES" ]; then
+            semgrep scan --config auto --json --output semgrep.json $CHANGED_FILES
+            semgrep scan --config auto --sarif --output semgrep.sarif $CHANGED_FILES
+          else
+            echo "No files changed in this PR"
+            echo "[]" > semgrep.json
+            echo '{"runs": []}' > semgrep.sarif
+          fi
       
       - name: Upload SARIF to github
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
-          # category: semgrep-scan
