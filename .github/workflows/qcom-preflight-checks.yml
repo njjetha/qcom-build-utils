@@ -1,14 +1,14 @@
 name: Qualcomm Preflight Checks
 on:
-  pull_request_target:
-    branches:
-      - main
-      - latest
+  # pull_request_target:
+  #   branches:
+  #     - main
+  #     - latest
 
-  push:
-    branches:
-      - main
-      - latest
+  # push:
+  #   branches:
+  #     - main
+  #     - latest
 
   workflow_dispatch:
 
