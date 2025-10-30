@@ -19,6 +19,7 @@ jobs:
       - name: Get changed files
         shell: bash
         run: |
+          git config --global --add safe.directory "$(pwd)"
           git fetch origin ${{ github.base_ref }}
           echo "CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }} | tr '\n' ' ')" >> $GITHUB_ENV
       
